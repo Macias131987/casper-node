@@ -1165,13 +1165,11 @@ type Transport = SslStream<TcpStream>;
 
 /// A framed transport for `Message`s.
 pub(crate) type FullTransport<P> = tokio_serde::Framed<
-    FramedTransport,
+    tokio_util::codec::Framed<Transport, LengthDelimitedCodec>,
     Message<P>,
     Arc<Message<P>>,
     CountingFormat<BincodeFormat>,
 >;
-
-pub(crate) type FramedTransport = tokio_util::codec::Framed<Transport, LengthDelimitedCodec>;
 
 /// Constructs a new full transport on a stream.
 ///
@@ -1179,26 +1177,19 @@ pub(crate) type FramedTransport = tokio_util::codec::Framed<Transport, LengthDel
 fn full_transport<P>(
     metrics: Weak<Metrics>,
     connection_id: ConnectionId,
-    framed: FramedTransport,
+    transport: Transport,
     role: Role,
 ) -> FullTransport<P>
 where
     for<'de> P: Serialize + Deserialize<'de>,
     for<'de> Message<P>: Serialize + Deserialize<'de>,
 {
+    let framed =
+        tokio_util::codec::Framed::new(transport, LengthDelimitedCodec::builder().new_codec());
+
     tokio_serde::Framed::new(
         framed,
         CountingFormat::new(metrics, connection_id, role, BincodeFormat::default()),
-    )
-}
-
-/// Constructs a framed transport.
-fn framed_transport(transport: Transport, maximum_net_message_size: u32) -> FramedTransport {
-    tokio_util::codec::Framed::new(
-        transport,
-        LengthDelimitedCodec::builder()
-            .max_frame_length(maximum_net_message_size as usize)
-            .new_codec(),
     )
 }
 
