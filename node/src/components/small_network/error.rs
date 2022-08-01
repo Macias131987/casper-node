@@ -159,7 +159,7 @@ pub enum ConnectionError {
     CouldNotEncodeOurHandshake(
         #[serde(skip_serializing)]
         #[source]
-        io::Error,
+        rmp_serde::encode::Error,
     ),
     /// A background sender for our handshake panicked or crashed.
     ///
@@ -175,7 +175,7 @@ pub enum ConnectionError {
     InvalidRemoteHandshakeMessage(
         #[serde(skip_serializing)]
         #[source]
-        io::Error,
+        rmp_serde::decode::Error,
     ),
     /// The peer sent a consensus certificate, but it was invalid.
     #[error("invalid consensus certificate")]
@@ -184,11 +184,6 @@ pub enum ConnectionError {
         #[source]
         crypto::Error,
     ),
-    /// Failed to reunite handshake sink/stream.
-    ///
-    /// This is usually a bug.
-    #[error("handshake sink/stream could not be reunited")]
-    FailedToReuniteHandshakeSinkAndStream,
 }
 
 /// IO error sending a raw frame.
@@ -203,9 +198,7 @@ pub enum RawFrameIoError {
         #[source]
         io::Error,
     ),
-    /// Unexpected close/end-of-file.
-    #[error("closed unexpectedly while reading raw frame")]
-    UnexpectedEof,
+
     /// Length limit violation.
     #[error("advertised length of {0} exceeds configured maximum raw frame size")]
     MaximumLengthExceeded(usize),
