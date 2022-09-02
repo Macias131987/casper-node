@@ -58,8 +58,12 @@ use bytes::Bytes;
 use datasize::DataSize;
 use futures::{future::BoxFuture, FutureExt};
 use muxink::{
-    codec::{bincode::BincodeEncoder, length_delimited::LengthDelimited, TranscodingSink},
-    io::FrameWriter,
+    codec::{
+        bincode::{BincodeDecoder, BincodeEncoder},
+        length_delimited::LengthDelimited,
+        ResultTranscoder, TranscodingSink, TranscodingStream,
+    },
+    io::{FrameReader, FrameWriter},
 };
 use openssl::{error::ErrorStack as OpenSslErrorStack, pkey};
 use pkey::{PKey, Private};
@@ -99,7 +103,7 @@ use self::{
     metrics::Metrics,
     outgoing::{DialOutcome, DialRequest, OutgoingConfig, OutgoingManager},
     symmetry::ConnectionSymmetry,
-    tasks::{MessageQueueItem, NetworkContext},
+    tasks::{MessageQueueItem, MessageReaderError, NetworkContext},
 };
 
 use crate::{
@@ -583,7 +587,7 @@ where
 
     fn handle_incoming_closed(
         &mut self,
-        result: io::Result<()>,
+        result: core::result::Result<(), MessageReaderError>,
         peer_id: Box<NodeId>,
         peer_addr: SocketAddr,
         span: Span,
@@ -1172,6 +1176,12 @@ type OutgoingSink<P> = TranscodingSink<
     BincodeEncoder<Arc<Message<P>>>,
     Arc<Message<P>>,
     FrameWriter<Bytes, LengthDelimited, Compat<SslStream<TcpStream>>>,
+>;
+
+/// The incoming message stream of an incoming connection.
+type IncomingStream<P> = TranscodingStream<
+    ResultTranscoder<BincodeDecoder<Message<P>>, io::Error>,
+    FrameReader<LengthDelimited, Compat<SslStream<TcpStream>>>,
 >;
 
 /// A framed transport for `Message`s.
