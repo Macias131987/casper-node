@@ -95,14 +95,14 @@ pub(crate) use self::{
 use self::{
     chain_info::ChainInfo,
     counting_format::{ConnectionId, CountingFormat, Role},
-    error::ConnectionError,
+    error::{ConnectionError, MessageReaderError},
     event::{IncomingConnection, OutgoingConnection},
     limiter::Limiter,
     message::ConsensusKeyPair,
     metrics::Metrics,
     outgoing::{DialOutcome, DialRequest, OutgoingConfig, OutgoingManager},
     symmetry::ConnectionSymmetry,
-    tasks::{MessageQueueItem, MessageReaderError, NetworkContext},
+    tasks::{MessageQueueItem, NetworkContext},
 };
 
 use crate::{

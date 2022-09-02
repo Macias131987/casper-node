@@ -45,7 +45,7 @@ use casper_types::{ProtocolVersion, TimeDiff};
 use super::{
     chain_info::ChainInfo,
     counting_format::{ConnectionId, Role},
-    error::ConnectionError,
+    error::{ConnectionError, MessageReaderError},
     event::{IncomingConnection, OutgoingConnection},
     handshake::{negotiate_handshake, HandshakeOutcome},
     limiter::LimiterHandle,
@@ -400,17 +400,6 @@ pub(super) async fn server<P, REv>(
     }
 }
 
-/// An error produced by the message reader.
-#[derive(Debug, Error)]
-pub enum MessageReaderError {
-    /// The semaphore that limits trie demands was closed unexpectedly.
-    #[error("demand limiter semaphore closed unexpectedly")]
-    UnexpectedSemaphoreClose,
-    /// The message receival stack returned an error.
-    #[error("message receive error")]
-    ReceiveError(TranscodingIoError<bincode::Error, io::Error>),
-}
-
 /// Network message reader.
 ///
 /// Schedules all received messages until the stream is closed or an error occurs.
@@ -525,7 +514,7 @@ where
                             err = display_error(&err),
                             "receiving message failed, closing connection"
                         );
-                        return Err(MessageReaderError::ReceiveError(err));
+                        return Err(MessageReaderError::ReceiveError(Box::new(err)));
                     }
                 }
             }
