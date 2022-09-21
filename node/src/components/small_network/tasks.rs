@@ -50,7 +50,7 @@ use crate::{
     reactor::{EventQueueHandle, QueueKind},
     tls::{self, TlsCert},
     types::NodeId,
-    utils::display_error,
+    utils::{display_error, LockedLineWriter},
 };
 
 /// An item on the internal outgoing message queue.
@@ -77,14 +77,18 @@ where
         .set_nodelay(true)
         .map_err(ConnectionError::TcpNoDelay)?;
 
-    let mut transport = tls::create_tls_connector(context.our_cert.as_x509(), &context.secret_key)
-        .and_then(|connector| connector.configure())
-        .and_then(|mut config| {
-            config.set_verify_hostname(false);
-            config.into_ssl("this-will-not-be-checked.example.com")
-        })
-        .and_then(|ssl| SslStream::new(ssl, stream))
-        .map_err(ConnectionError::TlsInitialization)?;
+    let mut transport = tls::create_tls_connector(
+        context.our_cert.as_x509(),
+        &context.secret_key,
+        context.keylog.clone(),
+    )
+    .and_then(|connector| connector.configure())
+    .and_then(|mut config| {
+        config.set_verify_hostname(false);
+        config.into_ssl("this-will-not-be-checked.example.com")
+    })
+    .and_then(|ssl| SslStream::new(ssl, stream))
+    .map_err(ConnectionError::TlsInitialization)?;
 
     SslStream::connect(Pin::new(&mut transport))
         .await
@@ -177,6 +181,8 @@ where
     pub(super) our_cert: Arc<TlsCert>,
     /// Secret key associated with `our_cert`.
     pub(super) secret_key: Arc<PKey<Private>>,
+    /// Logfile to log TLS keys to. If given, automatically enables logging.
+    pub(super) keylog: Option<LockedLineWriter>,
     /// Weak reference to the networking metrics shared by all sender/receiver tasks.
     pub(super) net_metrics: Weak<Metrics>,
     /// Chain info extract from chainspec.
@@ -213,13 +219,19 @@ where
     REv: From<Event<P>> + 'static,
     P: Payload,
 {
-    let (peer_id, transport) =
-        match server_setup_tls(stream, &context.our_cert, &context.secret_key).await {
-            Ok(value) => value,
-            Err(error) => {
-                return IncomingConnection::FailedEarly { peer_addr, error };
-            }
-        };
+    let (peer_id, transport) = match server_setup_tls(
+        stream,
+        &context.our_cert,
+        &context.secret_key,
+        context.keylog.clone(),
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            return IncomingConnection::FailedEarly { peer_addr, error };
+        }
+    };
 
     // Register the `peer_id` on the [`Span`] for logging the ID from here on out.
     Span::current().record("peer_id", &field::display(peer_id));
@@ -269,11 +281,13 @@ pub(super) async fn server_setup_tls(
     stream: TcpStream,
     cert: &TlsCert,
     secret_key: &PKey<Private>,
+    keylog: Option<LockedLineWriter>,
 ) -> Result<(NodeId, Transport), ConnectionError> {
-    let mut tls_stream = tls::create_tls_acceptor(cert.as_x509().as_ref(), secret_key.as_ref())
-        .and_then(|ssl_acceptor| Ssl::new(ssl_acceptor.context()))
-        .and_then(|ssl| SslStream::new(ssl, stream))
-        .map_err(ConnectionError::TlsInitialization)?;
+    let mut tls_stream =
+        tls::create_tls_acceptor(cert.as_x509().as_ref(), secret_key.as_ref(), keylog)
+            .and_then(|ssl_acceptor| Ssl::new(ssl_acceptor.context()))
+            .and_then(|ssl| SslStream::new(ssl, stream))
+            .map_err(ConnectionError::TlsInitialization)?;
 
     SslStream::accept(Pin::new(&mut tls_stream))
         .await

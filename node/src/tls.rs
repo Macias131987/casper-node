@@ -56,6 +56,8 @@ use rand::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
+use crate::utils::LockedLineWriter;
+
 // This is inside a private module so that the generated `BigArray` does not form part of this
 // crate's public API, and hence also doesn't appear in the rustdocs.
 mod big_array {
@@ -295,9 +297,10 @@ pub fn generate_node_cert() -> SslResult<(X509, PKey<Private>)> {
 pub(crate) fn create_tls_acceptor(
     cert: &X509Ref,
     private_key: &PKeyRef<Private>,
+    keylog: Option<LockedLineWriter>,
 ) -> SslResult<SslAcceptor> {
     let mut builder = SslAcceptor::mozilla_modern_v5(SslMethod::tls_server())?;
-    set_context_options(&mut builder, cert, private_key)?;
+    set_context_options(&mut builder, cert, private_key, keylog)?;
 
     Ok(builder.build())
 }
@@ -309,9 +312,10 @@ pub(crate) fn create_tls_acceptor(
 pub(crate) fn create_tls_connector(
     cert: &X509Ref,
     private_key: &PKeyRef<Private>,
+    keylog: Option<LockedLineWriter>,
 ) -> SslResult<SslConnector> {
     let mut builder = SslConnector::builder(SslMethod::tls_client())?;
-    set_context_options(&mut builder, cert, private_key)?;
+    set_context_options(&mut builder, cert, private_key, keylog)?;
 
     Ok(builder.build())
 }
@@ -323,6 +327,7 @@ fn set_context_options(
     ctx: &mut SslContextBuilder,
     cert: &X509Ref,
     private_key: &PKeyRef<Private>,
+    keylog: Option<LockedLineWriter>,
 ) -> SslResult<()> {
     ctx.set_min_proto_version(Some(SslVersion::TLS1_3))?;
 
@@ -335,6 +340,12 @@ fn set_context_options(
     // (causing the request of a cert), but pass all of them through and verify them after the
     // handshake has completed.
     ctx.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
+
+    if let Some(writer) = keylog {
+        ctx.set_keylog_callback(move |_ssl_ref, str| {
+            writer.write_line(str);
+        });
+    }
 
     Ok(())
 }
